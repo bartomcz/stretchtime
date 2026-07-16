@@ -24,7 +24,7 @@ const PERSON_SCORE_THRESHOLD = 0.55;
 const NOTIFICATION_DELAY_STORAGE_KEY = 'stretchtime.notificationDelayMinutes';
 const DEFAULT_NOTIFICATION_DELAY_MINUTES = presenceDefaults.notificationDelayMs / 60_000;
 let notificationDelayMinutes = loadNotificationDelayMinutes();
-const tracker = new PresenceTracker({
+let tracker = new PresenceTracker({
   notificationDelayMs: notificationDelayMinutes * 60_000,
 });
 
@@ -298,13 +298,15 @@ function drawPredictions(predictions: DetectedObject[]): void {
   }
 }
 
-async function detectionLoop(): Promise<void> {
-  if (!monitoring) return;
+async function detectionLoop(stream: MediaStream): Promise<void> {
+  if (!monitoring || mediaStream !== stream) return;
   const startedAt = performance.now();
 
   try {
     if (!model) throw new Error('The local model is not loaded.');
     const predictions = await model.detect(elements.camera, 5, 0.5);
+    if (!monitoring || mediaStream !== stream) return;
+
     const personPredictions = predictions.filter(
       (prediction) =>
         prediction.class === 'person' && prediction.score >= PERSON_SCORE_THRESHOLD,
@@ -319,11 +321,17 @@ async function detectionLoop(): Promise<void> {
     handleTrackerEvents(tracker.recordDetection(personDetected));
     render();
   } catch (error) {
+    if (!monitoring || mediaStream !== stream) return;
     console.error('Detection failed:', error);
     elements.errorMessage.textContent = 'A detection frame failed; monitoring will retry.';
   } finally {
-    const elapsed = performance.now() - startedAt;
-    window.setTimeout(detectionLoop, Math.max(0, DETECTION_INTERVAL_MS - elapsed));
+    if (monitoring && mediaStream === stream) {
+      const elapsed = performance.now() - startedAt;
+      window.setTimeout(
+        () => detectionLoop(stream),
+        Math.max(0, DETECTION_INTERVAL_MS - elapsed),
+      );
+    }
   }
 }
 
@@ -387,11 +395,12 @@ async function startMonitoring(): Promise<void> {
     await elements.camera.play();
 
     elements.placeholder.hidden = true;
-    elements.startButton.textContent = 'Monitoring active';
+    elements.startButton.disabled = false;
+    elements.startButton.textContent = 'Stop monitoring';
     monitoring = true;
     render();
     sendPresenceEvent();
-    detectionLoop();
+    detectionLoop(stream);
   } catch (error) {
     const cause = toError(error);
     mediaStream?.getTracks().forEach((track) => track.stop());
@@ -405,7 +414,34 @@ async function startMonitoring(): Promise<void> {
   }
 }
 
+function stopMonitoring(): void {
+  monitoring = false;
+  clearTimeout(presenceHeartbeatTimer);
+  presenceHeartbeatTimer = undefined;
+  mediaStream?.getTracks().forEach((track) => track.stop());
+  mediaStream = undefined;
+  elements.camera.pause();
+  elements.camera.srcObject = null;
+  elements.overlay
+    .getContext('2d')
+    ?.clearRect(0, 0, elements.overlay.width, elements.overlay.height);
+  elements.placeholder.hidden = false;
+  elements.detectionState.textContent = 'Monitoring stopped';
+  elements.startButton.textContent = 'Start monitoring';
+  elements.connectionDot.classList.remove('is-connected');
+  elements.connectionText.textContent = 'Waiting for monitoring';
+  elements.errorMessage.textContent = '';
+  elements.notificationBanner.hidden = true;
+  systemNotification?.close();
+  systemNotification = undefined;
+  tracker = new PresenceTracker({
+    notificationDelayMs: notificationDelayMinutes * 60_000,
+  });
+  render();
+}
+
 async function sendPresenceEvent(): Promise<void> {
+  if (!monitoring) return;
   clearTimeout(presenceHeartbeatTimer);
   presenceHeartbeatTimer = window.setTimeout(
     sendPresenceEvent,
@@ -421,18 +457,23 @@ async function sendPresenceEvent(): Promise<void> {
       body: JSON.stringify({ timestamp: new Date().toISOString(), status }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!monitoring) return;
 
     elements.connectionDot.classList.add('is-connected');
     elements.connectionText.textContent = 'Events logging';
     refreshTimeline();
   } catch (error) {
+    if (!monitoring) return;
     console.error('Could not log presence event:', error);
     elements.connectionDot.classList.remove('is-connected');
     elements.connectionText.textContent = 'Logging unavailable';
   }
 }
 
-elements.startButton.addEventListener('click', startMonitoring);
+elements.startButton.addEventListener('click', () => {
+  if (monitoring) stopMonitoring();
+  else startMonitoring();
+});
 elements.notificationDelay.addEventListener('input', () => {
   elements.notificationDelay.setCustomValidity('');
 });
