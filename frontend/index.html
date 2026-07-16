@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>StretchTime Presence Monitor</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">LOCAL PRESENCE MONITOR</p>
+          <h1>StretchTime</h1>
+        </div>
+        <div class="connection" title="Presence event logging status">
+          <span id="connection-dot" class="connection__dot"></span>
+          <span id="connection-text">Waiting for monitoring</span>
+        </div>
+      </header>
+
+      <section class="dashboard" aria-label="Presence dashboard">
+        <div class="camera-card">
+          <div id="camera-frame" class="camera-frame">
+            <video id="camera" autoplay muted playsinline></video>
+            <canvas id="overlay" aria-hidden="true"></canvas>
+            <div id="camera-placeholder" class="camera-placeholder">
+              <span class="camera-icon">◉</span>
+              <p>Camera is off</p>
+              <small>Video stays in this browser and is never uploaded.</small>
+            </div>
+          </div>
+          <div class="camera-footer">
+            <span id="model-state">Local model not loaded</span>
+            <span id="detection-state">No detection yet</span>
+          </div>
+        </div>
+
+        <aside class="status-panel">
+          <article id="status-card" class="metric-card status-card is-absent">
+            <p class="metric-label">Current status</p>
+            <div class="status-value">
+              <span class="status-indicator"></span>
+              <strong id="presence-status">Not Present</strong>
+            </div>
+            <p id="status-detail" class="metric-detail">Start monitoring to begin.</p>
+          </article>
+
+          <article class="metric-card">
+            <p class="metric-label">Continuous presence</p>
+            <strong id="presence-duration" class="timer">00:00:00</strong>
+            <p class="metric-detail">Allows a 15-second detection gap.</p>
+          </article>
+
+          <article class="metric-card">
+            <p class="metric-label">Break notification</p>
+            <strong id="notification-status" class="notification-value">Ready</strong>
+            <label class="duration-setting" for="notification-delay">
+              <span>Notify me after</span>
+              <span class="duration-input">
+                <input
+                  id="notification-delay"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="30"
+                  inputmode="numeric"
+                  aria-describedby="notification-detail"
+                />
+                <span id="notification-delay-unit">minutes</span>
+              </span>
+            </label>
+            <p id="notification-detail" class="metric-detail">
+              One alert after 30 minutes per session. Changes apply immediately.
+            </p>
+          </article>
+
+          <button id="start-button" class="primary-button" type="button">
+            Start monitoring
+          </button>
+          <p id="error-message" class="error-message" role="alert"></p>
+        </aside>
+      </section>
+
+      <section class="timeline-card" aria-labelledby="timeline-heading">
+        <div class="timeline-header">
+          <div>
+            <p class="metric-label">Daily activity</p>
+            <h2 id="timeline-heading">Today</h2>
+            <p id="timeline-date" class="metric-detail"></p>
+          </div>
+          <div class="timeline-legend" aria-label="Timeline legend">
+            <span><i class="legend-swatch is-present"></i>Present</span>
+            <span><i class="legend-swatch is-away"></i>Away</span>
+            <span><i class="legend-swatch is-offline"></i>Offline</span>
+          </div>
+        </div>
+
+        <div
+          id="presence-timeline"
+          class="timeline-track"
+          role="img"
+          aria-label="Today's presence timeline"
+        >
+          <div id="timeline-segments" class="timeline-segments"></div>
+          <span id="timeline-now" class="timeline-now" aria-hidden="true"></span>
+        </div>
+        <div class="timeline-axis" aria-hidden="true">
+          <span>12 AM</span><span>12 PM</span><span>12 AM</span>
+        </div>
+
+        <div class="timeline-summary">
+          <span>
+            <i class="legend-swatch is-present"></i>Present
+            <strong id="present-total">—</strong>
+          </span>
+          <span>
+            <i class="legend-swatch is-away"></i>Away <strong id="away-total">—</strong>
+          </span>
+          <span>
+            <i class="legend-swatch is-offline"></i>Offline
+            <strong id="offline-total">—</strong>
+          </span>
+          <span id="timeline-message" class="timeline-message"></span>
+        </div>
+      </section>
+
+      <div id="notification-banner" class="notification-banner" role="status" hidden>
+        <div>
+          <strong>Time to stretch</strong>
+          <p id="notification-message">You have been present for 30 minutes.</p>
+        </div>
+        <button id="dismiss-notification" type="button" aria-label="Dismiss notification">×</button>
+      </div>
+    </main>
+
+    <script src="/vendor/tf.min.js"></script>
+    <script src="/vendor/coco-ssd.min.js"></script>
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>
