@@ -1,5 +1,22 @@
-import { PresenceTracker, presenceDefaults } from './presence-tracker.js';
-import { createTimelineSegments, OFFLINE_AFTER_MS } from './presence-timeline.js';
+import type { DetectedObject, ObjectDetection } from '@tensorflow-models/coco-ssd';
+import {
+  PresenceTracker,
+  presenceDefaults,
+  type PresenceTrackerEvents,
+} from './presence-tracker.js';
+import {
+  createTimelineSegments,
+  OFFLINE_AFTER_MS,
+  type TimelineEvent,
+  type TimelineStatus,
+} from './presence-timeline.js';
+
+declare global {
+  interface Window {
+    tf: typeof import('@tensorflow/tfjs');
+    cocoSsd: typeof import('@tensorflow-models/coco-ssd');
+  }
+}
 
 const DETECTION_INTERVAL_MS = 1_000;
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000;
@@ -11,47 +28,53 @@ const tracker = new PresenceTracker({
   notificationDelayMs: notificationDelayMinutes * 60_000,
 });
 
+function requireElement<T extends Element>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing required element: ${selector}`);
+  return element;
+}
+
 const elements = {
-  camera: document.querySelector('#camera'),
-  overlay: document.querySelector('#overlay'),
-  placeholder: document.querySelector('#camera-placeholder'),
-  modelState: document.querySelector('#model-state'),
-  detectionState: document.querySelector('#detection-state'),
-  statusCard: document.querySelector('#status-card'),
-  presenceStatus: document.querySelector('#presence-status'),
-  statusDetail: document.querySelector('#status-detail'),
-  presenceDuration: document.querySelector('#presence-duration'),
-  notificationStatus: document.querySelector('#notification-status'),
-  notificationDelay: document.querySelector('#notification-delay'),
-  notificationDelayUnit: document.querySelector('#notification-delay-unit'),
-  notificationDetail: document.querySelector('#notification-detail'),
-  notificationMessage: document.querySelector('#notification-message'),
-  startButton: document.querySelector('#start-button'),
-  errorMessage: document.querySelector('#error-message'),
-  notificationBanner: document.querySelector('#notification-banner'),
-  dismissNotification: document.querySelector('#dismiss-notification'),
-  connectionDot: document.querySelector('#connection-dot'),
-  connectionText: document.querySelector('#connection-text'),
-  timeline: document.querySelector('#presence-timeline'),
-  timelineSegments: document.querySelector('#timeline-segments'),
-  timelineNow: document.querySelector('#timeline-now'),
-  timelineDate: document.querySelector('#timeline-date'),
-  presentTotal: document.querySelector('#present-total'),
-  awayTotal: document.querySelector('#away-total'),
-  offlineTotal: document.querySelector('#offline-total'),
-  timelineMessage: document.querySelector('#timeline-message'),
+  camera: requireElement<HTMLVideoElement>('#camera'),
+  overlay: requireElement<HTMLCanvasElement>('#overlay'),
+  placeholder: requireElement<HTMLElement>('#camera-placeholder'),
+  modelState: requireElement<HTMLElement>('#model-state'),
+  detectionState: requireElement<HTMLElement>('#detection-state'),
+  statusCard: requireElement<HTMLElement>('#status-card'),
+  presenceStatus: requireElement<HTMLElement>('#presence-status'),
+  statusDetail: requireElement<HTMLElement>('#status-detail'),
+  presenceDuration: requireElement<HTMLElement>('#presence-duration'),
+  notificationStatus: requireElement<HTMLElement>('#notification-status'),
+  notificationDelay: requireElement<HTMLInputElement>('#notification-delay'),
+  notificationDelayUnit: requireElement<HTMLElement>('#notification-delay-unit'),
+  notificationDetail: requireElement<HTMLElement>('#notification-detail'),
+  notificationMessage: requireElement<HTMLElement>('#notification-message'),
+  startButton: requireElement<HTMLButtonElement>('#start-button'),
+  errorMessage: requireElement<HTMLElement>('#error-message'),
+  notificationBanner: requireElement<HTMLElement>('#notification-banner'),
+  dismissNotification: requireElement<HTMLButtonElement>('#dismiss-notification'),
+  connectionDot: requireElement<HTMLElement>('#connection-dot'),
+  connectionText: requireElement<HTMLElement>('#connection-text'),
+  timeline: requireElement<HTMLElement>('#presence-timeline'),
+  timelineSegments: requireElement<HTMLElement>('#timeline-segments'),
+  timelineNow: requireElement<HTMLElement>('#timeline-now'),
+  timelineDate: requireElement<HTMLElement>('#timeline-date'),
+  presentTotal: requireElement<HTMLElement>('#present-total'),
+  awayTotal: requireElement<HTMLElement>('#away-total'),
+  offlineTotal: requireElement<HTMLElement>('#offline-total'),
+  timelineMessage: requireElement<HTMLElement>('#timeline-message'),
 };
 
-let model;
-let mediaStream;
+let model: ObjectDetection | undefined;
+let mediaStream: MediaStream | undefined;
 let monitoring = false;
-let systemNotification;
-let presenceHeartbeatTimer;
-let timelineEvents = [];
-let timelineDayStart;
+let systemNotification: Notification | undefined;
+let presenceHeartbeatTimer: number | undefined;
+let timelineEvents: TimelineEvent[] = [];
+let timelineDayStart: number | undefined;
 let timelineRequestId = 0;
 
-function loadNotificationDelayMinutes() {
+function loadNotificationDelayMinutes(): number {
   try {
     const savedMinutes = Number(localStorage.getItem(NOTIFICATION_DELAY_STORAGE_KEY));
     return Number.isSafeInteger(savedMinutes) && savedMinutes > 0
@@ -62,7 +85,7 @@ function loadNotificationDelayMinutes() {
   }
 }
 
-function saveNotificationDelayMinutes(minutes) {
+function saveNotificationDelayMinutes(minutes: number): void {
   try {
     localStorage.setItem(NOTIFICATION_DELAY_STORAGE_KEY, String(minutes));
   } catch {
@@ -70,19 +93,19 @@ function saveNotificationDelayMinutes(minutes) {
   }
 }
 
-function formatNotificationDelay(minutes) {
+function formatNotificationDelay(minutes: number): string {
   return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
 }
 
-function updateNotificationDelayCopy() {
+function updateNotificationDelayCopy(): void {
   const delay = formatNotificationDelay(notificationDelayMinutes);
-  elements.notificationDelay.value = notificationDelayMinutes;
+  elements.notificationDelay.value = String(notificationDelayMinutes);
   elements.notificationDelayUnit.textContent = notificationDelayMinutes === 1 ? 'minute' : 'minutes';
   elements.notificationDetail.textContent = `One alert after ${delay} per session. Changes apply immediately.`;
   elements.notificationMessage.textContent = `You have been present for ${delay}.`;
 }
 
-function formatDuration(milliseconds) {
+function formatDuration(milliseconds: number): string {
   const totalSeconds = Math.floor(milliseconds / 1_000);
   const hours = Math.floor(totalSeconds / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -90,13 +113,13 @@ function formatDuration(milliseconds) {
   return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':');
 }
 
-function getDayBounds(now = new Date()) {
+function getDayBounds(now = new Date()): { startMs: number; endMs: number } {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   return { startMs: start.getTime(), endMs: end.getTime() };
 }
 
-function formatTimelineDuration(milliseconds) {
+function formatTimelineDuration(milliseconds: number): string {
   const totalMinutes = Math.floor(milliseconds / 60_000);
   if (totalMinutes === 0) return milliseconds > 0 ? '<1m' : '0m';
   const hours = Math.floor(totalMinutes / 60);
@@ -104,7 +127,7 @@ function formatTimelineDuration(milliseconds) {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-function renderTimeline(nowMs = Date.now()) {
+function renderTimeline(nowMs = Date.now()): void {
   const { startMs, endMs } = getDayBounds(new Date(nowMs));
   if (timelineDayStart !== startMs) {
     refreshTimeline();
@@ -114,7 +137,7 @@ function renderTimeline(nowMs = Date.now()) {
   const elapsedEnd = Math.min(Math.max(nowMs, startMs), endMs);
   const dayDuration = endMs - startMs;
   const segments = createTimelineSegments(timelineEvents, startMs, elapsedEnd);
-  const totals = { present: 0, away: 0, offline: 0 };
+  const totals: Record<TimelineStatus, number> = { present: 0, away: 0, offline: 0 };
   const timeFormatter = new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit',
@@ -126,7 +149,7 @@ function renderTimeline(nowMs = Date.now()) {
     element.className = `timeline-segment is-${segment.status}`;
     element.style.left = `${((segment.startMs - startMs) / dayDuration) * 100}%`;
     element.style.width = `${((segment.endMs - segment.startMs) / dayDuration) * 100}%`;
-    const statusLabel = `${segment.status[0].toUpperCase()}${segment.status.slice(1)}`;
+    const statusLabel = `${segment.status.charAt(0).toUpperCase()}${segment.status.slice(1)}`;
     element.title =
       `${statusLabel} · ${timeFormatter.format(segment.startMs)}` +
       `–${timeFormatter.format(segment.endMs)}`;
@@ -149,7 +172,7 @@ function renderTimeline(nowMs = Date.now()) {
   );
 }
 
-async function refreshTimeline() {
+async function refreshTimeline(): Promise<void> {
   const requestId = ++timelineRequestId;
   const { startMs, endMs } = getDayBounds();
   const query = new URLSearchParams({
@@ -161,11 +184,17 @@ async function refreshTimeline() {
   try {
     const response = await fetch(`/api/events?${query}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const payload = await response.json();
-    if (!Array.isArray(payload.events)) throw new Error('Invalid history response');
+    const payload: unknown = await response.json();
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      !Array.isArray((payload as { events?: unknown }).events)
+    ) {
+      throw new Error('Invalid history response');
+    }
     if (requestId !== timelineRequestId) return;
 
-    timelineEvents = payload.events;
+    timelineEvents = (payload as { events: TimelineEvent[] }).events;
     timelineDayStart = startMs;
     elements.timelineMessage.textContent = '';
     renderTimeline();
@@ -176,7 +205,7 @@ async function refreshTimeline() {
   }
 }
 
-function render(now = Date.now()) {
+function render(now = Date.now()): void {
   const snapshot = tracker.snapshot(now);
   const isPresent = snapshot.status === 'present';
 
@@ -192,7 +221,9 @@ function render(now = Date.now()) {
   } else if (isPresent) {
     const remaining = Math.max(
       0,
-      Math.ceil((presenceDefaults.absenceDelayMs - (now - tracker.lastSeenAt)) / 1_000),
+      Math.ceil(
+        (presenceDefaults.absenceDelayMs - (now - (tracker.lastSeenAt ?? now))) / 1_000,
+      ),
     );
     elements.statusDetail.textContent = `No current detection · ${remaining}s grace remaining.`;
   } else if (tracker.consecutiveDetections > 0) {
@@ -212,7 +243,7 @@ function render(now = Date.now()) {
   }
 }
 
-function triggerNotification() {
+function triggerNotification(): void {
   elements.notificationBanner.hidden = false;
 
   if ('Notification' in window && Notification.permission === 'granted') {
@@ -221,11 +252,11 @@ function triggerNotification() {
       body: `You have been continuously present for ${formatNotificationDelay(notificationDelayMinutes)}.`,
       tag: 'stretchtime-session',
       renotify: false,
-    });
+    } as NotificationOptions & { renotify: boolean });
   }
 }
 
-function handleTrackerEvents(events) {
+function handleTrackerEvents(events: PresenceTrackerEvents): void {
   if (events.notificationTriggered) triggerNotification();
   if (events.becameAbsent) {
     elements.notificationBanner.hidden = true;
@@ -237,9 +268,11 @@ function handleTrackerEvents(events) {
   }
 }
 
-function drawPredictions(predictions) {
+function drawPredictions(predictions: DetectedObject[]): void {
   const canvas = elements.overlay;
   const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not create the camera overlay context.');
+
   canvas.width = elements.camera.videoWidth;
   canvas.height = elements.camera.videoHeight;
   context.clearRect(0, 0, canvas.width, canvas.height);
@@ -265,11 +298,12 @@ function drawPredictions(predictions) {
   }
 }
 
-async function detectionLoop() {
+async function detectionLoop(): Promise<void> {
   if (!monitoring) return;
   const startedAt = performance.now();
 
   try {
+    if (!model) throw new Error('The local model is not loaded.');
     const predictions = await model.detect(elements.camera, 5, 0.5);
     const personPredictions = predictions.filter(
       (prediction) =>
@@ -279,7 +313,7 @@ async function detectionLoop() {
 
     drawPredictions(personPredictions);
     elements.detectionState.textContent = personDetected
-      ? `Person detected · ${Math.round(personPredictions[0].score * 100)}%`
+      ? `Person detected · ${Math.round(personPredictions[0]!.score * 100)}%`
       : 'No person in latest frame';
     elements.errorMessage.textContent = '';
     handleTrackerEvents(tracker.recordDetection(personDetected));
@@ -293,7 +327,7 @@ async function detectionLoop() {
   }
 }
 
-async function loadLocalModel() {
+async function loadLocalModel(): Promise<ObjectDetection> {
   elements.modelState.textContent = 'Loading local COCO-SSD model…';
   await window.tf.ready();
   const loadedModel = await window.cocoSsd.load({
@@ -304,7 +338,7 @@ async function loadLocalModel() {
   return loadedModel;
 }
 
-let modelLoadError;
+let modelLoadError: unknown;
 const modelPromise = loadLocalModel().catch((error) => {
   elements.modelState.textContent = 'Model failed to load';
   console.error('Model loading failed:', error);
@@ -312,12 +346,18 @@ const modelPromise = loadLocalModel().catch((error) => {
   return null;
 });
 
-function waitForVideoMetadata(video) {
+function waitForVideoMetadata(video: HTMLVideoElement): Promise<void> {
   if (video.readyState >= HTMLMediaElement.HAVE_METADATA) return Promise.resolve();
-  return new Promise((resolve) => video.addEventListener('loadedmetadata', resolve, { once: true }));
+  return new Promise<void>((resolve) =>
+    video.addEventListener('loadedmetadata', () => resolve(), { once: true }),
+  );
 }
 
-async function startMonitoring() {
+function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
+async function startMonitoring(): Promise<void> {
   elements.startButton.disabled = true;
   elements.startButton.textContent = 'Starting…';
   elements.errorMessage.textContent = '';
@@ -353,18 +393,19 @@ async function startMonitoring() {
     sendPresenceEvent();
     detectionLoop();
   } catch (error) {
+    const cause = toError(error);
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = undefined;
     elements.startButton.disabled = false;
     elements.startButton.textContent = 'Try again';
     elements.errorMessage.textContent =
-      error.name === 'NotAllowedError'
+      cause.name === 'NotAllowedError'
         ? 'Camera access was denied. Allow webcam access and try again.'
-        : `Could not start monitoring: ${error.message}`;
+        : `Could not start monitoring: ${cause.message}`;
   }
 }
 
-async function sendPresenceEvent() {
+async function sendPresenceEvent(): Promise<void> {
   clearTimeout(presenceHeartbeatTimer);
   presenceHeartbeatTimer = window.setTimeout(
     sendPresenceEvent,

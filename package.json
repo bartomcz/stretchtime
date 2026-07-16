@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "description": "Local-only webcam presence monitor",
-  "main": "backend/server.js",
+  "main": "dist/backend/server.js",
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "node --watch backend/server.js",
-    "test": "node --test",
-    "check": "node --check backend/server.js && node --check backend/presence-event.js && node --check backend/presence-event-repository.js && node --check backend/file-presence-event-repository.js && node --check frontend/js/app.js && node --check frontend/js/presence-tracker.js && node --check frontend/js/presence-timeline.js"
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "start": "npm run build && node dist/backend/server.js",
+    "dev": "npm run clean && tsc-watch --onSuccess \"node dist/backend/server.js\"",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "check": "tsc --noEmit"
   },
   "engines": {
     "node": ">=22"
@@ -18,5 +20,11 @@
     "@tensorflow-models/coco-ssd": "2.2.3",
     "@tensorflow/tfjs": "4.22.0",
     "express": "5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.1",
+    "tsc-watch": "7.2.1",
+    "typescript": "5.9.3"
   }
 }

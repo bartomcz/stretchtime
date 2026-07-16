@@ -1,15 +1,17 @@
 import { appendFile, readFile } from 'node:fs/promises';
 import { PresenceEventRepository } from './presence-event-repository.js';
-import { isPresenceEvent } from './presence-event.js';
+import { isPresenceEvent, type PresenceEvent } from './presence-event.js';
 
 export class FilePresenceEventRepository extends PresenceEventRepository {
-  constructor(filePath) {
+  private readonly filePath: string;
+  private pendingSave: Promise<void> = Promise.resolve();
+
+  constructor(filePath: string) {
     super();
     this.filePath = filePath;
-    this.pendingSave = Promise.resolve();
   }
 
-  save(event) {
+  override save(event: PresenceEvent): Promise<void> {
     const line = `${JSON.stringify(event)}\n`;
     const operation = this.pendingSave.then(() => appendFile(this.filePath, line, 'utf8'));
 
@@ -18,7 +20,7 @@ export class FilePresenceEventRepository extends PresenceEventRepository {
     return operation;
   }
 
-  async findByTimeRange(from, to) {
+  override async findByTimeRange(from: string, to: string): Promise<PresenceEvent[]> {
     const fromMs = typeof from === 'string' ? Date.parse(from) : Number.NaN;
     const toMs = typeof to === 'string' ? Date.parse(to) : Number.NaN;
     if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs >= toMs) {
@@ -28,11 +30,11 @@ export class FilePresenceEventRepository extends PresenceEventRepository {
     // Wait for queued appends so a read cannot observe a partially updated log.
     await this.pendingSave;
 
-    let contents;
+    let contents: string;
     try {
       contents = await readFile(this.filePath, 'utf8');
     } catch (error) {
-      if (error.code === 'ENOENT') return [];
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
     }
 
@@ -41,7 +43,7 @@ export class FilePresenceEventRepository extends PresenceEventRepository {
       .filter((line) => line.trim() !== '')
       .map((line, index) => {
         try {
-          const event = JSON.parse(line);
+          const event: unknown = JSON.parse(line);
           if (!isPresenceEvent(event)) throw new Error('invalid presence event');
           return event;
         } catch (error) {

@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {
   createTimelineSegments,
   OFFLINE_AFTER_MS,
+  type TimelineEvent,
 } from '../frontend/js/presence-timeline.js';
 
 const minute = 60_000;
 const start = Date.parse('2026-07-14T00:00:00.000Z');
 
-function event(offsetMinutes, status) {
+function event(offsetMinutes: number, status: 'present' | 'away'): TimelineEvent {
   return { timestamp: new Date(start + offsetMinutes * minute).toISOString(), status };
 }
 

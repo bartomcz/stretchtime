@@ -35,9 +35,9 @@ npm start
 
 Then open [http://127.0.0.1:3000](http://127.0.0.1:3000), set **Notify me after** to the desired number of minutes, and select **Start monitoring**. The duration is saved in the browser and changes apply to the current session immediately. Allow camera access when prompted. Browser notification permission is optional; the in-app notification still appears if operating-system notifications are denied.
 
-`npm install` installs the server and browser library packages. After installation, the app's runtime is fully local: TensorFlow.js is served from `node_modules`, and the model manifest and weight shards are included under `frontend/models/coco-ssd/`.
+`npm install` installs the server, browser libraries, and TypeScript build tools. `npm start` compiles the TypeScript sources into the ignored `dist/` directory before starting the app. After installation, the app's runtime is fully local: TensorFlow.js is served from `node_modules`, and the model manifest and weight shards are included under `frontend/models/coco-ssd/`.
 
-For automatic server restarts while editing:
+For automatic recompilation and server restarts while editing:
 
 ```bash
 npm run dev
@@ -78,20 +78,21 @@ The daily timeline reads a half-open time range with `GET /api/events?from=<ISO 
 
 ```text
 backend/
-  presence-event.js                  Event validation
-  presence-event-repository.js       Persistence contract
-  file-presence-event-repository.js  Serialized append-only file implementation
-  server.js                          Express static server and event endpoint
+  presence-event.ts                  Event validation and event types
+  presence-event-repository.ts       Persistence contract
+  file-presence-event-repository.ts  Serialized append-only file implementation
+  server.ts                          Express static server and event endpoint
 frontend/
   css/styles.css            Dashboard styling
-  js/app.js                 Camera, model, UI, notification, and event posting
-  js/presence-tracker.js    Stable presence state machine
-  js/presence-timeline.js   Daily status interval construction
+  js/app.ts                 Camera, model, UI, notification, and event posting
+  js/presence-tracker.ts    Stable presence state machine
+  js/presence-timeline.ts   Daily status interval construction
   models/coco-ssd/          Local model manifest and weights
   index.html
 test/
-  event-log.test.js
-  presence-tracker.test.js
+  event-log.test.ts
+  presence-timeline.test.ts
+  presence-tracker.test.ts
 ```
 
 ## Privacy and MVP limitations

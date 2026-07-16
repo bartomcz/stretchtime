@@ -1,4 +1,23 @@
-const DEFAULTS = Object.freeze({
+export interface PresenceTrackerOptions {
+  requiredConsecutiveDetections: number;
+  absenceDelayMs: number;
+  notificationDelayMs: number;
+}
+
+export interface PresenceTrackerEvents {
+  becamePresent: boolean;
+  becameAbsent: boolean;
+  notificationTriggered: boolean;
+}
+
+export interface PresenceSnapshot {
+  status: 'not-present' | 'present';
+  durationMs: number;
+  notificationSent: boolean;
+  personDetected: boolean;
+}
+
+const DEFAULTS: Readonly<PresenceTrackerOptions> = Object.freeze({
   requiredConsecutiveDetections: 3,
   absenceDelayMs: 15_000,
   notificationDelayMs: 30 * 60_000,
@@ -9,18 +28,20 @@ const DEFAULTS = Object.freeze({
  * It has no browser dependencies, which keeps the timing rules testable.
  */
 export class PresenceTracker {
-  constructor(options = {}) {
+  readonly options: PresenceTrackerOptions;
+  status: 'not-present' | 'present' = 'not-present';
+  consecutiveDetections = 0;
+  candidateStartedAt: number | null = null;
+  presenceStartedAt: number | null = null;
+  lastSeenAt: number | null = null;
+  personDetected = false;
+  notificationSent = false;
+
+  constructor(options: Partial<PresenceTrackerOptions> = {}) {
     this.options = { ...DEFAULTS, ...options };
-    this.status = 'not-present';
-    this.consecutiveDetections = 0;
-    this.candidateStartedAt = null;
-    this.presenceStartedAt = null;
-    this.lastSeenAt = null;
-    this.personDetected = false;
-    this.notificationSent = false;
   }
 
-  recordDetection(personDetected, now = Date.now()) {
+  recordDetection(personDetected: boolean, now = Date.now()): PresenceTrackerEvents {
     this.personDetected = personDetected;
     let becamePresent = false;
 
@@ -51,19 +72,20 @@ export class PresenceTracker {
     return this.tick(now, { becamePresent });
   }
 
-  setNotificationDelayMs(notificationDelayMs) {
+  setNotificationDelayMs(notificationDelayMs: number): void {
     if (!Number.isFinite(notificationDelayMs) || notificationDelayMs <= 0) {
       throw new RangeError('Notification delay must be a positive number.');
     }
     this.options.notificationDelayMs = notificationDelayMs;
   }
 
-  tick(now = Date.now(), events = {}) {
+  tick(now = Date.now(), events: { becamePresent?: boolean } = {}): PresenceTrackerEvents {
     let becameAbsent = false;
     let notificationTriggered = false;
 
     if (
       this.status === 'present' &&
+      this.lastSeenAt !== null &&
       now - this.lastSeenAt >= this.options.absenceDelayMs
     ) {
       this.status = 'not-present';
@@ -78,6 +100,7 @@ export class PresenceTracker {
 
     if (
       this.status === 'present' &&
+      this.presenceStartedAt !== null &&
       !this.notificationSent &&
       now - this.presenceStartedAt >= this.options.notificationDelayMs
     ) {
@@ -92,11 +115,13 @@ export class PresenceTracker {
     };
   }
 
-  snapshot(now = Date.now()) {
+  snapshot(now = Date.now()): PresenceSnapshot {
     return {
       status: this.status,
       durationMs:
-        this.status === 'present' ? Math.max(0, now - this.presenceStartedAt) : 0,
+        this.status === 'present' && this.presenceStartedAt !== null
+          ? Math.max(0, now - this.presenceStartedAt)
+          : 0,
       notificationSent: this.notificationSent,
       personDetected: this.personDetected,
     };

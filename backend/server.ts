@@ -5,9 +5,10 @@ import { FilePresenceEventRepository } from './file-presence-event-repository.js
 import { isPresenceEvent } from './presence-event.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.resolve(__dirname, '../..');
 const frontendRoot = path.join(projectRoot, 'frontend');
-const eventLogPath = process.env.EVENT_LOG_PATH ?? path.join(__dirname, 'events.log');
+const compiledFrontendScriptsRoot = path.join(projectRoot, 'dist/frontend/js');
+const eventLogPath = process.env.EVENT_LOG_PATH ?? path.join(projectRoot, 'backend/events.log');
 const eventRepository = new FilePresenceEventRepository(eventLogPath);
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = '127.0.0.1'; // Deliberately bind only to this machine.
@@ -26,6 +27,8 @@ app.get('/api/events', async (request, response) => {
     queryKeys.length !== 2 ||
     !queryKeys.includes('from') ||
     !queryKeys.includes('to') ||
+    typeof from !== 'string' ||
+    typeof to !== 'string' ||
     !Number.isFinite(fromMs) ||
     !Number.isFinite(toMs) ||
     fromMs >= toMs
@@ -71,6 +74,7 @@ app.get('/vendor/coco-ssd.min.js', (_request, response) => {
 app.get('/health', (_request, response) => {
   response.json({ status: 'ok' });
 });
+app.use('/js', express.static(compiledFrontendScriptsRoot));
 app.use(express.static(frontendRoot));
 
 const server = app.listen(port, host, () => {
@@ -78,7 +82,7 @@ const server = app.listen(port, host, () => {
   console.log(`Presence events are appended to ${eventLogPath}`);
 });
 
-function shutDown() {
+function shutDown(): void {
   server.close(() => process.exit(0));
 }
 

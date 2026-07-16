@@ -1,29 +1,47 @@
 export const OFFLINE_AFTER_MS = 90_000;
 
+export type TimelineStatus = 'present' | 'away' | 'offline';
+
+export interface TimelineEvent {
+  timestamp: string;
+  status: string;
+}
+
+export interface TimelineSegment {
+  status: TimelineStatus;
+  startMs: number;
+  endMs: number;
+}
+
+interface ParsedTimelineEvent extends TimelineEvent {
+  status: Exclude<TimelineStatus, 'offline'>;
+  timeMs: number;
+}
+
 /**
  * Converts heartbeat events into contiguous presence, away, and offline ranges.
  * A status remains known until another event arrives or its heartbeat expires.
  */
 export function createTimelineSegments(
-  events,
-  startMs,
-  endMs,
+  events: readonly TimelineEvent[],
+  startMs: number,
+  endMs: number,
   offlineAfterMs = OFFLINE_AFTER_MS,
-) {
+): TimelineSegment[] {
   if (!(startMs < endMs) || offlineAfterMs <= 0) return [];
 
   const orderedEvents = events
     .map((event) => ({ ...event, timeMs: Date.parse(event.timestamp) }))
     .filter(
-      (event) =>
+      (event): event is ParsedTimelineEvent =>
         Number.isFinite(event.timeMs) &&
         (event.status === 'present' || event.status === 'away') &&
         event.timeMs < endMs,
     )
     .sort((left, right) => left.timeMs - right.timeMs);
 
-  const segments = [];
-  const append = (status, segmentStart, segmentEnd) => {
+  const segments: TimelineSegment[] = [];
+  const append = (status: TimelineStatus, segmentStart: number, segmentEnd: number): void => {
     const clippedStart = Math.max(startMs, segmentStart);
     const clippedEnd = Math.min(endMs, segmentEnd);
     if (clippedStart >= clippedEnd) return;
@@ -36,7 +54,7 @@ export function createTimelineSegments(
     }
   };
 
-  let previousEvent;
+  let previousEvent: ParsedTimelineEvent | undefined;
   for (const event of orderedEvents) {
     if (previousEvent) {
       const knownUntil = Math.min(event.timeMs, previousEvent.timeMs + offlineAfterMs);
