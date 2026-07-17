@@ -9,7 +9,7 @@ A local-only MVP that uses the laptop webcam and browser-based TensorFlow.js COC
 
 ## Features
 
-- Live webcam preview with local person bounding boxes
+- Hidden webcam processing with no video or images displayed, stored, or uploaded
 - COCO-SSD Lite MobileNet v2 inference in the browser, approximately once per second
 - **Present** after 3 consecutive person detections
 - **Away** after 15 seconds without a person detection

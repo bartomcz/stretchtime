@@ -36,8 +36,13 @@ button { font: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 24px;
   margin-bottom: 28px;
 }
+
+.header-controls { display: grid; justify-items: end; gap: 8px; }
+.monitoring-actions { display: flex; align-items: center; gap: 18px; }
+.privacy-note { margin: 0; color: var(--muted); font-size: 0.72rem; }
 
 .eyebrow {
   margin: 0 0 5px;
@@ -72,11 +77,10 @@ h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -0.04em; 
 
 .dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(290px, 0.75fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 22px;
 }
 
-.camera-card,
 .metric-card,
 .timeline-card {
   border: 1px solid var(--border);
@@ -85,62 +89,9 @@ h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -0.04em; 
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.2);
 }
 
-.camera-card { align-self: start; overflow: hidden; }
-
-.camera-frame {
-  position: relative;
-  min-height: 420px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: #05080d;
-}
-
-.camera-frame video,
-.camera-frame canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.camera-frame video {
-  transform: scaleX(-1);
-}
-
-.camera-frame canvas {
-  position: absolute;
-  inset: 0;
-}
-
-.camera-placeholder {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  padding: 24px;
-  color: var(--muted);
-  text-align: center;
-  background: radial-gradient(circle, #121e2c, #070b11 70%);
-}
-
-.camera-placeholder[hidden] { display: none; }
-.camera-placeholder p { margin: 12px 0 5px; color: #dce5ef; font-weight: 700; }
-.camera-placeholder small { max-width: 320px; }
-.camera-icon { color: var(--green); font-size: 2.5rem; }
-
-.camera-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  border-top: 1px solid var(--border);
-}
-
-.status-panel { display: flex; flex-direction: column; gap: 14px; }
 .metric-card { padding: 20px; }
+.error-message.dashboard-error { margin: 10px 0 -10px; }
+
 .metric-label { margin: 0 0 11px; color: var(--muted); font-size: 0.78rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; }
 .metric-detail { margin: 9px 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
 
@@ -170,6 +121,23 @@ h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -0.04em; 
 .timeline-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .timeline-header h2 { margin: 0; font-size: 1.3rem; }
 .timeline-header .metric-detail { margin-top: 4px; }
+.timeline-toolbar { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.timeline-date-controls { display: flex; align-items: center; }
+.timeline-date-controls button,
+.timeline-date-controls input {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  color: #dce5ef;
+  background: #0a1018;
+  font: inherit;
+}
+.timeline-date-controls button { width: 36px; cursor: pointer; font-size: 1.2rem; }
+.timeline-date-controls button:first-child { border-radius: 8px 0 0 8px; }
+.timeline-date-controls button:last-child { border-radius: 0 8px 8px 0; }
+.timeline-date-controls button:disabled { color: #58677a; cursor: default; }
+.timeline-date-controls input { padding: 5px 9px; border-width: 1px 0; color-scheme: dark; }
+.timeline-date-controls button:focus-visible,
+.timeline-date-controls input:focus { position: relative; outline: 2px solid var(--green); outline-offset: -2px; }
 .timeline-legend,
 .timeline-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; color: var(--muted); font-size: 0.78rem; }
 .timeline-legend span,
@@ -186,14 +154,15 @@ h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -0.04em; 
 .timeline-segment { position: absolute; top: 0; bottom: 0; min-width: 1px; }
 .timeline-segment + .timeline-segment { box-shadow: -1px 0 rgba(10, 16, 24, 0.32); }
 .timeline-now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #eef3f8; box-shadow: 0 0 0 1px rgba(10, 16, 24, 0.45); transform: translateX(-1px); }
+.timeline-now[hidden] { display: none; }
 .timeline-axis { display: flex; justify-content: space-between; margin-top: 6px; color: #738399; font-size: 0.68rem; font-variant-numeric: tabular-nums; }
 .timeline-summary { margin-top: 16px; }
 .timeline-summary strong { color: #dce5ef; font-variant-numeric: tabular-nums; }
 .timeline-summary .timeline-message { margin-left: auto; color: var(--red); }
 
 .primary-button {
-  width: 100%;
-  min-height: 52px;
+  min-height: 44px;
+  padding: 0 20px;
   border: 0;
   border-radius: 13px;
   color: #07140f;
@@ -228,17 +197,14 @@ h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -0.04em; 
 @media (max-width: 820px) {
   .app-shell { width: min(100% - 24px, 680px); padding-top: 24px; }
   .dashboard { grid-template-columns: 1fr; }
-  .camera-frame { min-height: 260px; }
 }
 
 @media (max-width: 600px) {
+  .app-header { align-items: flex-start; flex-direction: column; }
+  .header-controls { width: 100%; justify-items: stretch; }
+  .monitoring-actions { align-items: stretch; flex-direction: column; gap: 12px; }
+  .primary-button { width: 100%; }
   .timeline-header { flex-direction: column; gap: 14px; }
+  .timeline-toolbar { align-items: flex-start; }
   .timeline-summary .timeline-message { width: 100%; margin-left: 0; }
-}
-
-@media (max-width: 480px) {
-  .connection { font-size: 0; }
-  .connection__dot { width: 10px; height: 10px; }
-  .camera-footer { flex-direction: column; }
-  .camera-frame { min-height: 220px; }
 }

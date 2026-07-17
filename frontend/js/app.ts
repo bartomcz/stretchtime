@@ -1,4 +1,4 @@
-import type { DetectedObject, ObjectDetection } from '@tensorflow-models/coco-ssd';
+import type { ObjectDetection } from '@tensorflow-models/coco-ssd';
 import {
   PresenceTracker,
   presenceDefaults,
@@ -36,10 +36,6 @@ function requireElement<T extends Element>(selector: string): T {
 
 const elements = {
   camera: requireElement<HTMLVideoElement>('#camera'),
-  overlay: requireElement<HTMLCanvasElement>('#overlay'),
-  placeholder: requireElement<HTMLElement>('#camera-placeholder'),
-  modelState: requireElement<HTMLElement>('#model-state'),
-  detectionState: requireElement<HTMLElement>('#detection-state'),
   statusCard: requireElement<HTMLElement>('#status-card'),
   presenceStatus: requireElement<HTMLElement>('#presence-status'),
   statusDetail: requireElement<HTMLElement>('#status-detail'),
@@ -58,7 +54,11 @@ const elements = {
   timeline: requireElement<HTMLElement>('#presence-timeline'),
   timelineSegments: requireElement<HTMLElement>('#timeline-segments'),
   timelineNow: requireElement<HTMLElement>('#timeline-now'),
+  timelineHeading: requireElement<HTMLElement>('#timeline-heading'),
   timelineDate: requireElement<HTMLElement>('#timeline-date'),
+  timelineDatePicker: requireElement<HTMLInputElement>('#timeline-date-picker'),
+  timelinePrevious: requireElement<HTMLButtonElement>('#timeline-previous'),
+  timelineNext: requireElement<HTMLButtonElement>('#timeline-next'),
   presentTotal: requireElement<HTMLElement>('#present-total'),
   awayTotal: requireElement<HTMLElement>('#away-total'),
   offlineTotal: requireElement<HTMLElement>('#offline-total'),
@@ -71,6 +71,8 @@ let monitoring = false;
 let systemNotification: Notification | undefined;
 let presenceHeartbeatTimer: number | undefined;
 let timelineEvents: TimelineEvent[] = [];
+let selectedTimelineDayStart = getDayBounds().startMs;
+let timelineFollowsToday = true;
 let timelineDayStart: number | undefined;
 let timelineRequestId = 0;
 
@@ -127,14 +129,73 @@ function formatTimelineDuration(milliseconds: number): string {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
+function formatDateInputValue(timestamp: number): string {
+  const date = new Date(timestamp);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function updateTimelineDateControls(nowMs = Date.now()): void {
+  const { startMs: todayStart } = getDayBounds(new Date(nowMs));
+  const today = new Date(todayStart);
+  const yesterdayStart = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() - 1,
+  ).getTime();
+
+  elements.timelineHeading.textContent =
+    selectedTimelineDayStart === todayStart
+      ? 'Today'
+      : selectedTimelineDayStart === yesterdayStart
+        ? 'Yesterday'
+        : 'Activity';
+  elements.timelineDate.textContent = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(selectedTimelineDayStart);
+  elements.timelineDatePicker.value = formatDateInputValue(selectedTimelineDayStart);
+  elements.timelineDatePicker.max = formatDateInputValue(todayStart);
+  elements.timelineNext.disabled = selectedTimelineDayStart >= todayStart;
+}
+
+function selectTimelineDay(dayStart: number): void {
+  const { startMs: todayStart } = getDayBounds();
+  selectedTimelineDayStart = Math.min(dayStart, todayStart);
+  timelineFollowsToday = selectedTimelineDayStart === todayStart;
+  updateTimelineDateControls();
+  refreshTimeline();
+}
+
+function shiftTimelineDay(days: number): void {
+  const selected = new Date(selectedTimelineDayStart);
+  selectTimelineDay(
+    new Date(selected.getFullYear(), selected.getMonth(), selected.getDate() + days).getTime(),
+  );
+}
+
 function renderTimeline(nowMs = Date.now()): void {
-  const { startMs, endMs } = getDayBounds(new Date(nowMs));
+  const { startMs: todayStart } = getDayBounds(new Date(nowMs));
+  if (timelineFollowsToday && selectedTimelineDayStart !== todayStart) {
+    selectedTimelineDayStart = todayStart;
+    refreshTimeline();
+    return;
+  }
+
+  const { startMs, endMs } = getDayBounds(new Date(selectedTimelineDayStart));
+  updateTimelineDateControls(nowMs);
   if (timelineDayStart !== startMs) {
     refreshTimeline();
     return;
   }
 
-  const elapsedEnd = Math.min(Math.max(nowMs, startMs), endMs);
+  const isToday = startMs === todayStart;
+  const elapsedEnd = isToday ? Math.min(Math.max(nowMs, startMs), endMs) : endMs;
   const dayDuration = endMs - startMs;
   const segments = createTimelineSegments(timelineEvents, startMs, elapsedEnd);
   const totals: Record<TimelineStatus, number> = { present: 0, away: 0, offline: 0 };
@@ -157,24 +218,29 @@ function renderTimeline(nowMs = Date.now()): void {
   });
 
   elements.timelineSegments.replaceChildren(...segmentElements);
+  elements.timelineNow.hidden = !isToday;
   elements.timelineNow.style.left = `${((elapsedEnd - startMs) / dayDuration) * 100}%`;
-  elements.timelineDate.textContent = new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  }).format(startMs);
   elements.presentTotal.textContent = formatTimelineDuration(totals.present);
   elements.awayTotal.textContent = formatTimelineDuration(totals.away);
   elements.offlineTotal.textContent = formatTimelineDuration(totals.offline);
   elements.timeline.setAttribute(
     'aria-label',
-    `Today's presence timeline. Present ${elements.presentTotal.textContent}, away ${elements.awayTotal.textContent}, offline ${elements.offlineTotal.textContent}.`,
+    `${elements.timelineDate.textContent} presence timeline. Present ${elements.presentTotal.textContent}, away ${elements.awayTotal.textContent}, offline ${elements.offlineTotal.textContent}.`,
   );
 }
 
 async function refreshTimeline(): Promise<void> {
   const requestId = ++timelineRequestId;
-  const { startMs, endMs } = getDayBounds();
+  const { startMs, endMs } = getDayBounds(new Date(selectedTimelineDayStart));
+  updateTimelineDateControls();
+  if (timelineDayStart !== startMs) {
+    elements.timelineSegments.replaceChildren();
+    elements.timelineNow.hidden = true;
+    elements.presentTotal.textContent = '—';
+    elements.awayTotal.textContent = '—';
+    elements.offlineTotal.textContent = '—';
+    elements.timelineMessage.textContent = 'Loading…';
+  }
   const query = new URLSearchParams({
     // Include enough context to determine whether a heartbeat crosses midnight.
     from: new Date(startMs - OFFLINE_AFTER_MS).toISOString(),
@@ -268,36 +334,6 @@ function handleTrackerEvents(events: PresenceTrackerEvents): void {
   }
 }
 
-function drawPredictions(predictions: DetectedObject[]): void {
-  const canvas = elements.overlay;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Could not create the camera overlay context.');
-
-  canvas.width = elements.camera.videoWidth;
-  canvas.height = elements.camera.videoHeight;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-
-  context.lineWidth = Math.max(2, canvas.width / 240);
-  context.font = `${Math.max(14, canvas.width / 36)}px system-ui`;
-
-  for (const prediction of predictions.filter((item) => item.class === 'person')) {
-    const [x, y, width, height] = prediction.bbox;
-    const mirroredX = canvas.width - x - width;
-    const label = `Person ${Math.round(prediction.score * 100)}%`;
-    const labelWidth = context.measureText(label).width + 12;
-    const labelHeight = Math.max(22, canvas.height / 18);
-
-    context.strokeStyle = '#46d89b';
-    context.fillStyle = 'rgba(70, 216, 155, 0.13)';
-    context.fillRect(mirroredX, y, width, height);
-    context.strokeRect(mirroredX, y, width, height);
-    context.fillStyle = '#46d89b';
-    context.fillRect(mirroredX, Math.max(0, y - labelHeight), labelWidth, labelHeight);
-    context.fillStyle = '#07140f';
-    context.fillText(label, mirroredX + 6, Math.max(17, y - 5));
-  }
-}
-
 async function detectionLoop(stream: MediaStream): Promise<void> {
   if (!monitoring || mediaStream !== stream) return;
   const startedAt = performance.now();
@@ -313,10 +349,6 @@ async function detectionLoop(stream: MediaStream): Promise<void> {
     );
     const personDetected = personPredictions.length > 0;
 
-    drawPredictions(personPredictions);
-    elements.detectionState.textContent = personDetected
-      ? `Person detected · ${Math.round(personPredictions[0]!.score * 100)}%`
-      : 'No person in latest frame';
     elements.errorMessage.textContent = '';
     handleTrackerEvents(tracker.recordDetection(personDetected));
     render();
@@ -336,19 +368,15 @@ async function detectionLoop(stream: MediaStream): Promise<void> {
 }
 
 async function loadLocalModel(): Promise<ObjectDetection> {
-  elements.modelState.textContent = 'Loading local COCO-SSD model…';
   await window.tf.ready();
-  const loadedModel = await window.cocoSsd.load({
+  return window.cocoSsd.load({
     base: 'lite_mobilenet_v2',
     modelUrl: '/models/coco-ssd/model.json',
   });
-  elements.modelState.textContent = `COCO-SSD ready · ${window.tf.getBackend()}`;
-  return loadedModel;
 }
 
 let modelLoadError: unknown;
 const modelPromise = loadLocalModel().catch((error) => {
-  elements.modelState.textContent = 'Model failed to load';
   console.error('Model loading failed:', error);
   modelLoadError = error;
   return null;
@@ -394,7 +422,6 @@ async function startMonitoring(): Promise<void> {
     await waitForVideoMetadata(elements.camera);
     await elements.camera.play();
 
-    elements.placeholder.hidden = true;
     elements.startButton.disabled = false;
     elements.startButton.textContent = 'Stop monitoring';
     monitoring = true;
@@ -422,11 +449,6 @@ function stopMonitoring(): void {
   mediaStream = undefined;
   elements.camera.pause();
   elements.camera.srcObject = null;
-  elements.overlay
-    .getContext('2d')
-    ?.clearRect(0, 0, elements.overlay.width, elements.overlay.height);
-  elements.placeholder.hidden = false;
-  elements.detectionState.textContent = 'Monitoring stopped';
   elements.startButton.textContent = 'Start monitoring';
   elements.connectionDot.classList.remove('is-connected');
   elements.connectionText.textContent = 'Waiting for monitoring';
@@ -461,7 +483,7 @@ async function sendPresenceEvent(): Promise<void> {
 
     elements.connectionDot.classList.add('is-connected');
     elements.connectionText.textContent = 'Events logging';
-    refreshTimeline();
+    if (timelineFollowsToday) refreshTimeline();
   } catch (error) {
     if (!monitoring) return;
     console.error('Could not log presence event:', error);
@@ -473,6 +495,16 @@ async function sendPresenceEvent(): Promise<void> {
 elements.startButton.addEventListener('click', () => {
   if (monitoring) stopMonitoring();
   else startMonitoring();
+});
+elements.timelinePrevious.addEventListener('click', () => shiftTimelineDay(-1));
+elements.timelineNext.addEventListener('click', () => shiftTimelineDay(1));
+elements.timelineDatePicker.addEventListener('change', () => {
+  const date = elements.timelineDatePicker.valueAsDate;
+  if (date) {
+    selectTimelineDay(
+      new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()).getTime(),
+    );
+  }
 });
 elements.notificationDelay.addEventListener('input', () => {
   elements.notificationDelay.setCustomValidity('');
