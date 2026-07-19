@@ -11,7 +11,7 @@ const compiledFrontendScriptsRoot = path.join(projectRoot, 'dist/frontend/js');
 const eventLogPath = process.env.EVENT_LOG_PATH ?? path.join(projectRoot, 'backend/events.log');
 const eventRepository = new FilePresenceEventRepository(eventLogPath);
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
-const host = '127.0.0.1'; // Deliberately bind only to this machine.
+const host = '0.0.0.0';
 
 const app = express();
 app.disable('x-powered-by');
